@@ -12,6 +12,7 @@
     - Streamlit 클라우드: 앱 설정 > Secrets 에 같은 내용 입력
 """
 
+import base64
 import io
 import xml.etree.ElementTree as ET
 from urllib.parse import unquote
@@ -23,24 +24,25 @@ import streamlit as st
 
 API_URL = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
 
-# 법정동 코드 앞 5자리 (시군구 코드). 목록에 없는 지역은 '직접 입력'으로 조회
+# 법정동 코드 앞 5자리 (시군구 코드), 행정안전부 법정동코드 2026.10.26 기준
+# 이후 행정구역이 바뀐 지역은 '직접 입력'으로 새 코드를 넣어 조회
 REGIONS = {
-    "서울특별시": {
-        "종로구": "11110", "중구": "11140", "용산구": "11170", "성동구": "11200",
-        "광진구": "11215", "동대문구": "11230", "중랑구": "11260", "성북구": "11290",
-        "강북구": "11305", "도봉구": "11320", "노원구": "11350", "은평구": "11380",
-        "서대문구": "11410", "마포구": "11440", "양천구": "11470", "강서구": "11500",
-        "구로구": "11530", "금천구": "11545", "영등포구": "11560", "동작구": "11590",
-        "관악구": "11620", "서초구": "11650", "강남구": "11680", "송파구": "11710",
-        "강동구": "11740",
-    },
-    "부산광역시": {"해운대구": "26350", "수영구": "26500"},
-    "대구광역시": {"수성구": "27260"},
-    "인천광역시": {"연수구": "28185"},
-    "대전광역시": {"유성구": "30200"},
+    "서울특별시": {"종로구": "11110", "중구": "11140", "용산구": "11170", "성동구": "11200", "광진구": "11215", "동대문구": "11230", "중랑구": "11260", "성북구": "11290", "강북구": "11305", "도봉구": "11320", "노원구": "11350", "은평구": "11380", "서대문구": "11410", "마포구": "11440", "양천구": "11470", "강서구": "11500", "구로구": "11530", "금천구": "11545", "영등포구": "11560", "동작구": "11590", "관악구": "11620", "서초구": "11650", "강남구": "11680", "송파구": "11710", "강동구": "11740"},
+    "부산광역시": {"중구": "26110", "서구": "26140", "동구": "26170", "영도구": "26200", "부산진구": "26230", "동래구": "26260", "남구": "26290", "북구": "26320", "해운대구": "26350", "사하구": "26380", "금정구": "26410", "강서구": "26440", "연제구": "26470", "수영구": "26500", "사상구": "26530", "기장군": "26710"},
+    "대구광역시": {"중구": "27110", "동구": "27140", "서구": "27170", "남구": "27200", "북구": "27230", "수성구": "27260", "달서구": "27290", "달성군": "27710", "군위군": "27720"},
+    "인천광역시": {"제물포구": "28125", "영종구": "28155", "미추홀구": "28177", "연수구": "28185", "남동구": "28200", "부평구": "28237", "계양구": "28245", "서해구": "28275", "검단구": "28290", "강화군": "28710", "옹진군": "28720"},
+    "대전광역시": {"동구": "30110", "중구": "30140", "서구": "30170", "유성구": "30200", "대덕구": "30230"},
+    "울산광역시": {"중구": "31110", "남구": "31140", "동구": "31170", "북구": "31200", "울주군": "31710"},
     "세종특별자치시": {"세종시": "36110"},
-    "경기도": {"성남시 분당구": "41135", "수원시 영통구": "41117", "용인시 수지구": "41465"},
-    "전북특별자치도": {"전주시 완산구": "52111", "전주시 덕진구": "52113"},
+    "경기도": {"수원시 장안구": "41111", "수원시 권선구": "41113", "수원시 팔달구": "41115", "수원시 영통구": "41117", "성남시 수정구": "41131", "성남시 중원구": "41133", "성남시 분당구": "41135", "의정부시": "41150", "안양시 만안구": "41171", "안양시 동안구": "41173", "부천시 원미구": "41192", "부천시 소사구": "41194", "부천시 오정구": "41196", "광명시": "41210", "평택시": "41220", "동두천시": "41250", "안산시 상록구": "41271", "안산시 단원구": "41273", "고양시 덕양구": "41281", "고양시 일산동구": "41285", "고양시 일산서구": "41287", "과천시": "41290", "구리시": "41310", "남양주시": "41360", "오산시": "41370", "시흥시": "41390", "군포시": "41410", "의왕시": "41430", "하남시": "41450", "용인시 처인구": "41461", "용인시 기흥구": "41463", "용인시 수지구": "41465", "파주시": "41480", "이천시": "41500", "안성시": "41550", "김포시": "41570", "화성시 만세구": "41591", "화성시 효행구": "41593", "화성시 병점구": "41595", "화성시 동탄구": "41597", "광주시": "41610", "양주시": "41630", "포천시": "41650", "여주시": "41670", "연천군": "41800", "가평군": "41820", "양평군": "41830"},
+    "강원특별자치도": {"춘천시": "51110", "원주시": "51130", "강릉시": "51150", "동해시": "51170", "태백시": "51190", "속초시": "51210", "삼척시": "51230", "홍천군": "51720", "횡성군": "51730", "영월군": "51750", "평창군": "51760", "정선군": "51770", "철원군": "51780", "화천군": "51790", "양구군": "51800", "인제군": "51810", "고성군": "51820", "양양군": "51830"},
+    "충청북도": {"청주시 상당구": "43111", "청주시 서원구": "43112", "청주시 흥덕구": "43113", "청주시 청원구": "43114", "충주시": "43130", "제천시": "43150", "보은군": "43720", "옥천군": "43730", "영동군": "43740", "증평군": "43745", "진천군": "43750", "괴산군": "43760", "음성군": "43770", "단양군": "43800"},
+    "충청남도": {"천안시 동남구": "44131", "천안시 서북구": "44133", "공주시": "44150", "보령시": "44180", "아산시": "44200", "서산시": "44210", "논산시": "44230", "계룡시": "44250", "당진시": "44270", "금산군": "44710", "부여군": "44760", "서천군": "44770", "청양군": "44790", "홍성군": "44800", "예산군": "44810", "태안군": "44825"},
+    "전북특별자치도": {"전주시 완산구": "52111", "전주시 덕진구": "52113", "군산시": "52130", "익산시": "52140", "정읍시": "52180", "남원시": "52190", "김제시": "52210", "완주군": "52710", "진안군": "52720", "무주군": "52730", "장수군": "52740", "임실군": "52750", "순창군": "52770", "고창군": "52790", "부안군": "52800"},
+    "전남광주통합특별시": {"목포시": "12110", "여수시": "12130", "순천시": "12150", "나주시": "12170", "광양시": "12190", "동구": "12210", "서구": "12240", "남구": "12270", "북구": "12300", "광산구": "12330", "담양군": "12710", "곡성군": "12720", "구례군": "12730", "고흥군": "12740", "보성군": "12750", "화순군": "12760", "장흥군": "12770", "강진군": "12780", "해남군": "12790", "영암군": "12800", "무안군": "12810", "함평군": "12820", "영광군": "12830", "장성군": "12840", "완도군": "12850", "진도군": "12860", "신안군": "12870"},
+    "경상북도": {"포항시 남구": "47111", "포항시 북구": "47113", "경주시": "47130", "김천시": "47150", "안동시": "47170", "구미시": "47190", "영주시": "47210", "영천시": "47230", "상주시": "47250", "문경시": "47280", "경산시": "47290", "의성군": "47730", "청송군": "47750", "영양군": "47760", "영덕군": "47770", "청도군": "47820", "고령군": "47830", "성주군": "47840", "칠곡군": "47850", "예천군": "47900", "봉화군": "47920", "울진군": "47930", "울릉군": "47940"},
+    "경상남도": {"창원시 의창구": "48121", "창원시 성산구": "48123", "창원시 마산합포구": "48125", "창원시 마산회원구": "48127", "창원시 진해구": "48129", "진주시": "48170", "통영시": "48220", "사천시": "48240", "김해시": "48250", "밀양시": "48270", "거제시": "48310", "양산시": "48330", "의령군": "48720", "함안군": "48730", "창녕군": "48740", "고성군": "48820", "남해군": "48840", "하동군": "48850", "산청군": "48860", "함양군": "48870", "거창군": "48880", "합천군": "48890"},
+    "제주특별자치도": {"제주시": "50110", "서귀포시": "50130"},
 }
 
 COLUMN_MAP = {  # API 응답 태그 → 한글 열 이름
@@ -111,17 +113,50 @@ def clean(rows):
 
 
 def to_excel_bytes(df):
-    """엑셀 변환 + 열 너비 자동 조정 + 제목 행 고정"""
+    """보기 좋게 정리된 엑셀 만들기: 열 너비·숫자 서식·제목 행 꾸미기·필터"""
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
     out = df.copy()
     out["계약일"] = out["계약일"].dt.strftime("%Y-%m-%d")
+    for col in ["층", "건축년도"]:  # 글자로 저장돼 있던 숫자를 진짜 숫자로
+        if col in out.columns:
+            out[col] = pd.to_numeric(out[col], errors="coerce").astype("Int64")
+    # 값이 하나도 없는 열은 빼기 (예: 과거 데이터의 거래유형·해제여부)
+    out = out[[c for c in out.columns if out[c].astype(str).str.strip().replace({"<NA>": "", "nan": ""}).ne("").any()]]
+
+    number_formats = {"거래금액(만원)": "#,##0", "전용평당가(만원)": "#,##0",
+                      "전용면적(㎡)": "0.00", "평형(평)": "0.0"}
+    center_cols = {"계약일", "층", "건축년도", "동", "거래유형", "해제여부"}
+
+    def text_width(v):  # 한글은 영문보다 두 배 넓게 계산
+        return sum(2 if ord(ch) > 127 else 1 for ch in str(v))
+
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         out.to_excel(writer, index=False, sheet_name="실거래가")
         ws = writer.sheets["실거래가"]
-        for col in ws.columns:
-            max_len = max(len(str(c.value)) if c.value is not None else 0 for c in col)
-            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+        header_fill = PatternFill("solid", fgColor="1F4E78")
+        for cell in ws[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.row_dimensions[1].height = 24
+
+        for idx, name in enumerate(out.columns, start=1):
+            letter = get_column_letter(idx)
+            values = [name] + out[name].astype(str).head(500).tolist()
+            ws.column_dimensions[letter].width = min(max(text_width(v) for v in values) + 3, 45)
+            fmt = number_formats.get(name)
+            for cell in ws[letter][1:]:
+                if fmt:
+                    cell.number_format = fmt
+                if name in center_cols:
+                    cell.alignment = Alignment(horizontal="center")
+
         ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions  # 제목 행에 필터 버튼
     return buffer.getvalue()
 
 
@@ -132,10 +167,55 @@ def get_service_key():
         return None
 
 
+
+# ---------------- 상단 로고 배너 (누르면 처음 화면으로) ----------------
+BANNER_SVG = """<svg xmlns='http://www.w3.org/2000/svg' width='900' height='120' viewBox='0 0 900 120'>
+<defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='0'>
+<stop offset='0' stop-color='#1F4E78'/><stop offset='1' stop-color='#2E86C1'/></linearGradient></defs>
+<rect width='900' height='120' rx='18' fill='url(#g)'/>
+<g fill='#ffffff' opacity='0.95'>
+<rect x='34' y='38' width='26' height='58' rx='3'/><rect x='64' y='22' width='34' height='74' rx='3'/><rect x='102' y='48' width='22' height='48' rx='3'/>
+</g>
+<g fill='#2E86C1'>
+<rect x='39' y='46' width='6' height='6'/><rect x='49' y='46' width='6' height='6'/><rect x='39' y='58' width='6' height='6'/><rect x='49' y='58' width='6' height='6'/>
+<rect x='70' y='30' width='7' height='7'/><rect x='84' y='30' width='7' height='7'/><rect x='70' y='44' width='7' height='7'/><rect x='84' y='44' width='7' height='7'/>
+<rect x='70' y='58' width='7' height='7'/><rect x='84' y='58' width='7' height='7'/><rect x='107' y='56' width='5' height='5'/><rect x='115' y='56' width='5' height='5'/>
+</g>
+<text x='150' y='62' font-family='Pretendard, Noto Sans KR, Malgun Gothic, sans-serif' font-size='34' font-weight='800' fill='#ffffff'>아파트 매매 실거래가 조회기</text>
+<text x='152' y='92' font-family='Pretendard, Noto Sans KR, Malgun Gothic, sans-serif' font-size='16' fill='#D6EAF8'>국토교통부 공공데이터 · 지역·기간별 실거래가 조회 · 엑셀 다운로드</text>
+</svg>"""
+
+
+def show_banner():
+    """배너 이미지를 링크로 감싸서, 누르면 앱 첫 주소로 새로 열림 (모든 설정·결과 초기화)"""
+    b64 = base64.b64encode(BANNER_SVG.encode("utf-8")).decode()
+    st.markdown(
+        f'<a href="./" target="_self" title="처음 화면으로">'
+        f'<img src="data:image/svg+xml;base64,{b64}" style="width:100%;max-width:900px;border-radius:18px;"></a>',
+        unsafe_allow_html=True)
+
+
+def show_home():
+    """조회 전 처음 화면"""
+    st.markdown("### 👋 어서 오세요")
+    st.write("전국 아파트의 **실제 매매 거래가격**을 지역과 기간별로 확인하고, 정리된 엑셀로 내려받을 수 있습니다.")
+    c1, c2, c3 = st.columns(3)
+    with c1.container(border=True):
+        st.markdown("**① 지역 고르기**")
+        st.caption("왼쪽에서 시·도와 시·군·구를 선택하세요. 2026년 최신 행정구역 기준입니다.")
+    with c2.container(border=True):
+        st.markdown("**② 기간 정하고 조회**")
+        st.caption("2006년부터 고를 수 있고, 한 번에 최대 24개월까지 조회됩니다.")
+    with c3.container(border=True):
+        st.markdown("**③ 분석하고 저장**")
+        st.caption("평균가·평당가·월별 추이를 보고, 단지별로 골라 엑셀로 내려받으세요.")
+    st.info("📱 휴대폰에서는 왼쪽 위 **>** 버튼을 눌러 조회 설정을 여세요. 위쪽 로고를 누르면 언제든 이 화면으로 돌아옵니다.")
+    st.caption("※ 개인정보 보호를 위해 호수는 공개되지 않으며, 동 정보는 등기가 끝난 거래에만 표시됩니다.")
+
+
 # ---------------- 화면 ----------------
 st.set_page_config(page_title="아파트 실거래가 조회기", page_icon="🏢", layout="wide")
-st.title("🏢 아파트 매매 실거래가 조회기")
-st.caption("국토교통부 공공데이터 API로 지역·기간별 아파트 실거래가를 조회하고 엑셀로 내려받습니다.")
+show_banner()
 
 with st.sidebar:
     st.header("조회 설정")
@@ -154,10 +234,11 @@ with st.sidebar:
 
     today = date.today()
     default_start = (pd.Timestamp(today) - pd.DateOffset(months=3)).date().replace(day=1)
-    start = st.date_input("시작 월", value=default_start, max_value=today)
-    end = st.date_input("끝 월", value=today, max_value=today)
+    start = st.date_input("시작 월", value=default_start, min_value=date(2006, 1, 1), max_value=today)
+    end = st.date_input("끝 월", value=today, min_value=date(2006, 1, 1), max_value=today)
     exclude_cancel = st.checkbox("해제(취소)된 거래 제외", value=True)
     run = st.button("조회하기", type="primary", use_container_width=True)
+    debug = st.checkbox("API 응답 원문 확인 (문제 확인용)", value=False)
     st.caption("※ 실거래 신고는 계약 후 30일 이내라 최근 한 달은 건수가 적을 수 있습니다.")
     st.caption("※ 평당가는 전용면적 기준이라, 공급면적 기준인 일반 시세 정보보다 높게 나옵니다.")
 
@@ -182,13 +263,25 @@ if run:
         except Exception as e:
             st.error(f"조회 중 오류가 났습니다: {e}")
         bar.empty()
+        if debug:
+            try:
+                key = service_key
+                raw = requests.get(API_URL, params={"serviceKey": key, "LAWD_CD": lawd_cd,
+                                   "DEAL_YMD": months[0], "pageNo": 1, "numOfRows": 10}, timeout=20)
+                with st.expander("API 응답 원문 (첫 달, 최대 10건)", expanded=True):
+                    st.write(f"요청 지역 코드: {lawd_cd} / 계약년월: {months[0]} / HTTP 상태: {raw.status_code}")
+                    st.code(raw.text[:3000], language="xml")
+            except Exception as e:
+                st.error(f"원문 확인 중 오류: {e}")
         df = clean(all_rows)
         if not df.empty and exclude_cancel and "해제여부" in df.columns:
             df = df[df["해제여부"] != "O"]
         st.session_state["apt_df"] = df
         st.session_state["apt_title"] = f"{region_name} · {months[0][:4]}.{months[0][4:]}~{months[-1][:4]}.{months[-1][4:]}"
 
-if "apt_df" in st.session_state:
+if "apt_df" not in st.session_state:
+    show_home()
+else:
     df = st.session_state["apt_df"]
     st.subheader(st.session_state["apt_title"])
     if df.empty:
@@ -196,12 +289,16 @@ if "apt_df" in st.session_state:
     else:
         # 필터
         c1, c2 = st.columns(2)
-        keyword = c1.text_input("아파트 이름 검색", placeholder="예: 래미안")
+        names = sorted(df["아파트"].dropna().unique().tolist())
+        picked = c1.multiselect(
+            f"단지 선택 (이 기간 거래된 단지 {len(names)}곳)", names,
+            placeholder="이름 일부를 입력해 찾기 · 비우면 전체",
+            help="조회 기간에 실제 거래가 있었던 단지만 목록에 나옵니다. 목록에 없으면 그 기간 거래가 없었다는 뜻입니다.")
         a_min, a_max = float(df["전용면적(㎡)"].min()), float(df["전용면적(㎡)"].max())
         area = c2.slider("전용면적(㎡)", a_min, a_max, (a_min, a_max)) if a_min < a_max else (a_min, a_max)
         f = df[(df["전용면적(㎡)"] >= area[0]) & (df["전용면적(㎡)"] <= area[1])]
-        if keyword:
-            f = f[f["아파트"].str.contains(keyword, case=False, na=False)]
+        if picked:
+            f = f[f["아파트"].isin(picked)]
 
         if f.empty:
             st.info("조건에 맞는 거래가 없습니다.")
